@@ -1,0 +1,594 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  LayoutDashboard, 
+  Camera as CameraIcon, 
+  History, 
+  Settings as SettingsIcon,
+  Bell,
+  Search,
+  User,
+  GraduationCap,
+  Users as UsersIcon,
+  LogIn,
+  Plus,
+  X,
+  Info,
+  AlertTriangle,
+  CheckCircle2
+} from 'lucide-react';
+import { CameraCapture } from './components/CameraCapture';
+import { Dashboard } from './components/Dashboard';
+import { Login } from './components/Login';
+import { StudentForm } from './components/StudentForm';
+import { analyzeClassroom, AttentionAnalysis, Student } from './services/gemini';
+import { cn } from './lib/utils';
+
+interface AppNotification {
+  id: string;
+  type: 'info' | 'warning' | 'success';
+  title: string;
+  message: string;
+  time: string;
+  read: boolean;
+}
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'camera' | 'history' | 'students' | 'settings'>('dashboard');
+  const [analysis, setAnalysis] = useState<AttentionAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [history, setHistory] = useState<{ time: string; engagement: number }[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showStudentForm, setShowStudentForm] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  useEffect(() => {
+    fetchStudents();
+    // Initial notification
+    addNotification('info', 'System Ready', 'EduFocus is monitoring classroom 402.');
+  }, []);
+
+  const addNotification = (type: 'info' | 'warning' | 'success', title: string, message: string) => {
+    const newNotif: AppNotification = {
+      id: Date.now().toString(),
+      type,
+      title,
+      message,
+      time: 'Just now',
+      read: false
+    };
+    setNotifications(prev => [newNotif, ...prev].slice(0, 10));
+  };
+
+  const fetchStudents = async () => {
+    try {
+      const res = await fetch('/api/students');
+      const data = await res.json();
+      setStudents(data);
+    } catch (err) {
+      console.error("Failed to fetch students", err);
+    }
+  };
+
+  const handleCapture = async (base64: string) => {
+    setIsAnalyzing(true);
+    try {
+      const result = await analyzeClassroom(base64, students);
+      setAnalysis(result);
+      
+      if (result.overallEngagement < 50) {
+        addNotification('warning', 'Low Engagement Alert', `Classroom attention has dropped to ${result.overallEngagement}%.`);
+      } else {
+        addNotification('success', 'Analysis Complete', `Classroom engagement is at ${result.overallEngagement}%.`);
+      }
+
+      // Update student attention scores and feedback
+      if (result.studentDetails) {
+        const updatedStudents = students.map(s => {
+          const detail = result.studentDetails?.find(d => d.rollNumber === s.rollNumber);
+          if (detail) {
+            const updated = {
+              ...s,
+              lastAttentionScore: detail.attentionScore,
+              feedback: [...(s.feedback || []), detail.feedback].slice(-5)
+            };
+            // Persist to server
+            fetch(`/api/students/${s.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            });
+            return updated;
+          }
+          return s;
+        });
+        setStudents(updatedStudents);
+      }
+
+      const newHistoryItem = {
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        engagement: result.overallEngagement
+      };
+      
+      setHistory(prev => [...prev.slice(-19), newHistoryItem]);
+      setActiveTab('dashboard');
+    } catch (error) {
+      console.error("Analysis failed:", error);
+      addNotification('warning', 'Analysis Failed', 'Could not process classroom image. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleLogin = (studentId: string) => {
+    const student = students.find(s => s.id === studentId);
+    setCurrentUser(student);
+    setIsLoggedIn(true);
+    addNotification('info', 'Student Login', `${student?.name} has marked their attendance.`);
+    // Mark attendance
+    const updated = students.map(s => s.id === studentId ? { ...s, attendanceStatus: 'present' as const } : s);
+    setStudents(updated);
+  };
+
+  const saveStudent = async (studentData: any) => {
+    try {
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...studentData, attendanceStatus: 'absent', lastAttentionScore: 0, feedback: [] })
+      });
+      const newStudent = await res.json();
+      setStudents([...students, newStudent]);
+      setShowStudentForm(false);
+      addNotification('success', 'Student Added', `${newStudent.name} has been registered.`);
+    } catch (err) {
+      console.error("Failed to save student", err);
+    }
+  };
+
+  const markAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  if (!isLoggedIn && activeTab === 'camera') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-8">
+        <button onClick={() => setActiveTab('dashboard')} className="mb-8 text-indigo-600 font-bold flex items-center space-x-2">
+          <span>← Back to Dashboard</span>
+        </button>
+        <Login onLogin={handleLogin} students={students} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      {/* Sidebar */}
+      <aside className="fixed left-0 top-0 h-full w-20 md:w-64 bg-white border-r border-slate-200 z-50 transition-all">
+        <div className="p-6 flex items-center space-x-3">
+          <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200 overflow-hidden">
+            <img 
+              src="https://png.pngtree.com/png-vector/20220611/ourmid/pngtree-smart-class-logo-design-png-image_5033333.png" 
+              alt="EduFocus Logo" 
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          <span className="hidden md:block font-bold text-xl tracking-tight text-slate-800">EduFocus</span>
+        </div>
+
+        <nav className="mt-8 px-4 space-y-2">
+          <NavItem 
+            active={activeTab === 'dashboard'} 
+            onClick={() => setActiveTab('dashboard')}
+            icon={<LayoutDashboard size={20} />}
+            label="Dashboard"
+          />
+          <NavItem 
+            active={activeTab === 'camera'} 
+            onClick={() => setActiveTab('camera')}
+            icon={<CameraIcon size={20} />}
+            label="Live Monitor"
+          />
+          <NavItem 
+            active={activeTab === 'students'} 
+            onClick={() => setActiveTab('students')}
+            icon={<UsersIcon size={20} />}
+            label="Students"
+          />
+          <NavItem 
+            active={activeTab === 'history'} 
+            onClick={() => setActiveTab('history')}
+            icon={<History size={20} />}
+            label="History"
+          />
+        </nav>
+
+        <div className="absolute bottom-8 left-0 w-full px-4 space-y-2">
+          <NavItem 
+            active={activeTab === 'settings'} 
+            onClick={() => setActiveTab('settings')}
+            icon={<SettingsIcon size={20} />}
+            label="Settings"
+          />
+          <div className="pt-4 border-t border-slate-100">
+            <div className="flex items-center space-x-3 p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer">
+              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
+                <User size={16} />
+              </div>
+              <div className="hidden md:block overflow-hidden">
+                <p className="text-sm font-semibold truncate">{isLoggedIn ? currentUser?.name : 'Prof. Anderson'}</p>
+                <p className="text-xs text-slate-500 truncate">{isLoggedIn ? 'Student' : 'Computer Science'}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="pl-20 md:pl-64 min-h-screen transition-all">
+        {/* Header */}
+        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 px-8 flex items-center justify-between">
+          <div className="flex items-center bg-slate-100 px-4 py-2 rounded-full w-full max-w-md">
+            <Search size={18} className="text-slate-400 mr-2" />
+            <input 
+              type="text" 
+              placeholder="Search sessions, students..." 
+              className="bg-transparent border-none focus:ring-0 text-sm w-full"
+            />
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            {!isLoggedIn && (
+              <button 
+                onClick={() => setActiveTab('camera')}
+                className="flex items-center space-x-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-bold transition-all"
+              >
+                <LogIn size={16} />
+                <span>Student Login</span>
+              </button>
+            )}
+            <div className="relative">
+              <button 
+                onClick={() => {
+                  setShowNotifications(!showNotifications);
+                  if (!showNotifications) markAllRead();
+                }}
+                className="p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors relative"
+              >
+                <Bell size={20} />
+                {notifications.some(n => !n.read) && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
+                )}
+              </button>
+
+              <AnimatePresence>
+                {showNotifications && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden"
+                    >
+                      <div className="p-4 border-b border-slate-50 flex items-center justify-between">
+                        <h3 className="font-bold text-slate-800">Notifications</h3>
+                        <button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                          <X size={16} />
+                        </button>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto">
+                        {notifications.length > 0 ? notifications.map(notif => (
+                          <div key={notif.id} className={cn(
+                            "p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors flex space-x-3",
+                            !notif.read && "bg-indigo-50/30"
+                          )}>
+                            <div className={cn(
+                              "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
+                              notif.type === 'info' && "bg-blue-100 text-blue-600",
+                              notif.type === 'warning' && "bg-amber-100 text-amber-600",
+                              notif.type === 'success' && "bg-emerald-100 text-emerald-600"
+                            )}>
+                              {notif.type === 'info' && <Info size={16} />}
+                              {notif.type === 'warning' && <AlertTriangle size={16} />}
+                              {notif.type === 'success' && <CheckCircle2 size={16} />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-slate-800 truncate">{notif.title}</p>
+                              <p className="text-xs text-slate-500 line-clamp-2">{notif.message}</p>
+                              <p className="text-[10px] text-slate-400 mt-1">{notif.time}</p>
+                            </div>
+                          </div>
+                        )) : (
+                          <div className="p-8 text-center text-slate-400">
+                            <p className="text-sm italic">No new notifications</p>
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+            <div className="h-8 w-px bg-slate-200 mx-2"></div>
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Current Session</p>
+              <p className="text-sm font-semibold text-slate-700">Intro to Algorithms • Room 402</p>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <div className="p-8 max-w-6xl mx-auto">
+          <AnimatePresence mode="wait">
+            {activeTab === 'dashboard' && (
+              <motion.div
+                key="dashboard"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h1 className="text-3xl font-bold text-slate-900">Classroom Insights</h1>
+                    <p className="text-slate-500 mt-1">Real-time analysis of student engagement and focus.</p>
+                  </div>
+                  <button 
+                    onClick={() => setActiveTab('camera')}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center space-x-2"
+                  >
+                    <CameraIcon size={18} />
+                    <span>New Analysis</span>
+                  </button>
+                </div>
+                <Dashboard analysis={analysis} history={history} />
+              </motion.div>
+            )}
+
+            {activeTab === 'students' && (
+              <motion.div
+                key="students"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <h1 className="text-3xl font-bold text-slate-900">Student Directory</h1>
+                  <button 
+                    onClick={() => setShowStudentForm(true)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold flex items-center space-x-2"
+                  >
+                    <Plus size={18} />
+                    <span>Add Student</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {students.map(student => (
+                    <div 
+                      key={student.id} 
+                      onClick={() => {
+                        setCurrentUser(student);
+                        // We can use a modal or just show details
+                      }}
+                      className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                          <User size={24} />
+                        </div>
+                        <span className={cn(
+                          "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
+                          student.attendanceStatus === 'present' ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
+                        )}>
+                          {student.attendanceStatus}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{student.name}</h3>
+                      <p className="text-xs text-slate-400 mb-4">Roll: {student.rollNumber} • Age: {student.age} • Grade: {student.grade}</p>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase mb-1">
+                            <span>Attention Score</span>
+                            <span>{student.lastAttentionScore}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className={cn(
+                                "h-full transition-all",
+                                student.lastAttentionScore > 70 ? "bg-emerald-500" : "bg-amber-500"
+                              )}
+                              style={{ width: `${student.lastAttentionScore}%` }}
+                            />
+                          </div>
+                        </div>
+                        
+                        {student.feedback && student.feedback.length > 0 && (
+                          <div className="pt-2 border-t border-slate-50">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Latest Feedback</p>
+                            <p className="text-xs text-slate-600 italic line-clamp-1 group-hover:line-clamp-none transition-all">"{student.feedback[student.feedback.length - 1]}"</p>
+                          </div>
+                        )}
+                        
+                        <div className="pt-2 border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-400">
+                          <span>Parent: {student.parentContact}</span>
+                          <span className="text-indigo-500 font-bold opacity-0 group-hover:opacity-100 transition-opacity">View Profile →</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'students' && currentUser && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4"
+              >
+                <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                    <h2 className="text-xl font-bold text-slate-800">Student Profile</h2>
+                    <button onClick={() => setCurrentUser(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                      <X size={20} />
+                    </button>
+                  </div>
+                  <div className="p-8">
+                    <div className="flex items-center space-x-6 mb-8">
+                      <div className="w-24 h-24 bg-indigo-100 rounded-3xl flex items-center justify-center text-indigo-600">
+                        <User size={48} />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold text-slate-900">{currentUser.name}</h3>
+                        <p className="text-slate-500">Roll Number: {currentUser.rollNumber}</p>
+                        <div className="mt-2 flex space-x-2">
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold uppercase tracking-wider">Grade {currentUser.grade}</span>
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold uppercase tracking-wider">{currentUser.age} Years Old</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6 mb-8">
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact Information</p>
+                        <p className="text-sm font-medium text-slate-700">{currentUser.email}</p>
+                        <p className="text-sm font-medium text-slate-700">{currentUser.phone}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parent/Guardian</p>
+                        <p className="text-sm font-medium text-slate-700">{currentUser.parentContact}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Aadhar Number</p>
+                        <p className="text-sm font-medium text-slate-700">•••• •••• {currentUser.aadharNumber.slice(-4)}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Attendance</p>
+                        <p className={cn(
+                          "text-sm font-bold",
+                          currentUser.attendanceStatus === 'present' ? "text-emerald-600" : "text-rose-600"
+                        )}>{currentUser.attendanceStatus.toUpperCase()}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Attention History & Feedback</p>
+                      <div className="space-y-2">
+                        {currentUser.feedback?.map((f: string, i: number) => (
+                          <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 italic">
+                            "{f}"
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-8 pt-6 border-t border-slate-100 flex space-x-4">
+                      <button 
+                        onClick={() => {
+                          // Logic to download profile as JSON/Text
+                          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentUser));
+                          const downloadAnchorNode = document.createElement('a');
+                          downloadAnchorNode.setAttribute("href",     dataStr);
+                          downloadAnchorNode.setAttribute("download", `${currentUser.name}_profile.json`);
+                          document.body.appendChild(downloadAnchorNode);
+                          downloadAnchorNode.click();
+                          downloadAnchorNode.remove();
+                        }}
+                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-all"
+                      >
+                        Download Profile
+                      </button>
+                      <button className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all">
+                        Edit Profile
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'settings' && (
+              <motion.div
+                key="settings"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="max-w-2xl"
+              >
+                <h1 className="text-3xl font-bold text-slate-900 mb-8">Settings</h1>
+                <div className="space-y-6">
+                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <h3 className="font-bold text-slate-800 mb-4">System Configuration</h3>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">Auto-Analysis Interval</p>
+                          <p className="text-xs text-slate-500">How often the system captures frames</p>
+                        </div>
+                        <select className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">
+                          <option>Every 5 mins</option>
+                          <option>Every 10 mins</option>
+                          <option>Manual only</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold">Face Recognition Sensitivity</p>
+                          <p className="text-xs text-slate-500">Confidence threshold for attendance</p>
+                        </div>
+                        <input type="range" className="w-32" />
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                    <h3 className="font-bold text-slate-800 mb-4">Database Management</h3>
+                    <p className="text-sm text-slate-500 mb-4">You are currently using a local JSON database.</p>
+                    <button className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-sm font-bold hover:bg-rose-100 transition-all">
+                      Clear All Data
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ... other tabs ... */}
+          </AnimatePresence>
+        </div>
+
+        {showStudentForm && (
+          <StudentForm onSave={saveStudent} onClose={() => setShowStudentForm(false)} />
+        )}
+      </main>
+    </div>
+  );
+}
+
+const NavItem = ({ active, onClick, icon, label }: any) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "w-full flex items-center space-x-3 p-3 rounded-xl transition-all group",
+      active 
+        ? "bg-indigo-50 text-indigo-600 shadow-sm" 
+        : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+    )}
+  >
+    <span className={cn("transition-transform group-hover:scale-110", active && "scale-110")}>
+      {icon}
+    </span>
+    <span className="hidden md:block text-sm font-semibold">{label}</span>
+  </button>
+);
+
+const FeatureCard = ({ title, desc }: any) => (
+  <div className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
+    <h3 className="font-bold text-slate-800 mb-2">{title}</h3>
+    <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+  </div>
+);
