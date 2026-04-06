@@ -15,6 +15,7 @@ export interface Student {
   attendanceStatus: "present" | "absent";
   lastAttentionScore: number;
   feedback: string[];
+  role?: "student" | "teacher";
 }
 
 export interface AttentionAnalysis {
@@ -96,6 +97,74 @@ export async function analyzeClassroom(base64Image: string, students: Student[])
           }
         },
         required: ["overallEngagement", "studentCount", "focusedCount", "distractedCount", "mood", "summary", "recommendations"],
+      },
+    },
+  });
+
+  return JSON.parse(response.text || "{}");
+}
+
+export interface SessionSummary {
+  topic: string;
+  keyPoints: string[];
+  engagementOverview: string;
+  studentHighlights: { name: string; status: string }[];
+  overallRating: number;
+}
+
+export async function generateSessionSummary(base64Image: string, students: Student[]): Promise<SessionSummary> {
+  const studentContext = students.map(s => `${s.name} (Attention: ${s.lastAttentionScore}%)`).join(", ");
+  
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: [
+      {
+        parts: [
+          {
+            text: `Based on this classroom image and student data, generate a comprehensive session summary.
+            Student Data: ${studentContext}
+            
+            Provide a JSON response:
+            {
+              "topic": "Inferred lesson topic",
+              "keyPoints": ["point 1", "point 2", "point 3"],
+              "engagementOverview": "A paragraph summarizing overall class engagement",
+              "studentHighlights": [
+                { "name": "student name", "status": "e.g., Highly Focused, Needs Encouragement" }
+              ],
+              "overallRating": number (1-5)
+            }`,
+          },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64Image,
+            },
+          },
+        ],
+      },
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          topic: { type: Type.STRING },
+          keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+          engagementOverview: { type: Type.STRING },
+          studentHighlights: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                status: { type: Type.STRING },
+              }
+            }
+          },
+          overallRating: { type: Type.NUMBER },
+        },
+        required: ["topic", "keyPoints", "engagementOverview", "studentHighlights", "overallRating"],
       },
     },
   });

@@ -15,14 +15,18 @@ import {
   X,
   Info,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  Clock,
+  Calendar
 } from 'lucide-react';
 import { CameraCapture } from './components/CameraCapture';
 import { Dashboard } from './components/Dashboard';
-import { Login } from './components/Login';
+import { Auth } from './components/Auth';
 import { StudentForm } from './components/StudentForm';
-import { analyzeClassroom, AttentionAnalysis, Student } from './services/gemini';
+import { analyzeClassroom, generateSessionSummary, AttentionAnalysis, Student, SessionSummary } from './services/gemini';
 import { cn } from './lib/utils';
+import { SessionSummaryModal } from './components/SessionSummaryModal';
 
 interface AppNotification {
   id: string;
@@ -36,17 +40,22 @@ interface AppNotification {
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'camera' | 'history' | 'students' | 'settings'>('dashboard');
   const [analysis, setAnalysis] = useState<AttentionAnalysis | null>(null);
+  const [sessionSummary, setSessionSummary] = useState<SessionSummary | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [history, setHistory] = useState<{ time: string; engagement: number }[]>([]);
+  const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [showStudentForm, setShowStudentForm] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStudents();
+    fetchAttendanceHistory();
     // Initial notification
     addNotification('info', 'System Ready', 'EduFocus is monitoring classroom 402.');
   }, []);
@@ -73,8 +82,19 @@ export default function App() {
     }
   };
 
+  const fetchAttendanceHistory = async () => {
+    try {
+      const res = await fetch('/api/attendance');
+      const data = await res.json();
+      setAttendanceHistory(data);
+    } catch (err) {
+      console.error("Failed to fetch attendance history", err);
+    }
+  };
+
   const handleCapture = async (base64: string) => {
     setIsAnalyzing(true);
+    setLastCapturedImage(base64);
     try {
       const result = await analyzeClassroom(base64, students);
       setAnalysis(result);
@@ -123,14 +143,59 @@ export default function App() {
     }
   };
 
-  const handleLogin = (studentId: string) => {
-    const student = students.find(s => s.id === studentId);
-    setCurrentUser(student);
+  const handleGenerateSummary = async () => {
+    if (!lastCapturedImage) {
+      addNotification('warning', 'No Data', 'Please capture a classroom frame first.');
+      return;
+    }
+    setIsGeneratingSummary(true);
+    try {
+      const summary = await generateSessionSummary(lastCapturedImage, students);
+      setSessionSummary(summary);
+      addNotification('success', 'Summary Generated', 'Live session summary is now available.');
+    } catch (error) {
+      console.error("Summary generation failed:", error);
+      addNotification('warning', 'Generation Failed', 'Could not generate session summary.');
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const handleLogin = async (user: any) => {
+    setCurrentUser(user);
     setIsLoggedIn(true);
-    addNotification('info', 'Student Login', `${student?.name} has marked their attendance.`);
-    // Mark attendance
-    const updated = students.map(s => s.id === studentId ? { ...s, attendanceStatus: 'present' as const } : s);
-    setStudents(updated);
+    addNotification('success', 'Login Successful', `Welcome, ${user.name}!`);
+    
+    if (user.role === 'student') {
+      // Mark attendance
+      const updated = students.map(s => s.id === user.id ? { ...s, attendanceStatus: 'present' as const } : s);
+      setStudents(updated);
+
+      // Record in history
+      try {
+        const res = await fetch('/api/attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentId: user.id,
+            studentName: user.name,
+            rollNumber: user.rollNumber,
+            status: 'present'
+          })
+        });
+        const record = await res.json();
+        setAttendanceHistory(prev => [record, ...prev]);
+      } catch (err) {
+        console.error("Failed to record attendance", err);
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setActiveTab('dashboard');
+    addNotification('info', 'Logged Out', 'You have been successfully logged out.');
   };
 
   const saveStudent = async (studentData: any) => {
@@ -153,15 +218,8 @@ export default function App() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
-  if (!isLoggedIn && activeTab === 'camera') {
-    return (
-      <div className="min-h-screen bg-slate-50 p-8">
-        <button onClick={() => setActiveTab('dashboard')} className="mb-8 text-indigo-600 font-bold flex items-center space-x-2">
-          <span>← Back to Dashboard</span>
-        </button>
-        <Login onLogin={handleLogin} students={students} />
-      </div>
-    );
+  if (!isLoggedIn) {
+    return <Auth onLogin={handleLogin} students={students} />;
   }
 
   return (
@@ -215,13 +273,16 @@ export default function App() {
             label="Settings"
           />
           <div className="pt-4 border-t border-slate-100">
-            <div className="flex items-center space-x-3 p-3 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer">
-              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500">
+            <div 
+              onClick={handleLogout}
+              className="flex items-center space-x-3 p-3 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer group"
+            >
+              <div className="w-8 h-8 rounded-full bg-slate-200 group-hover:bg-rose-100 flex items-center justify-center text-slate-500 group-hover:text-rose-600 transition-colors">
                 <User size={16} />
               </div>
               <div className="hidden md:block overflow-hidden">
-                <p className="text-sm font-semibold truncate">{isLoggedIn ? currentUser?.name : 'Prof. Anderson'}</p>
-                <p className="text-xs text-slate-500 truncate">{isLoggedIn ? 'Student' : 'Computer Science'}</p>
+                <p className="text-sm font-semibold truncate">{currentUser?.name}</p>
+                <p className="text-xs text-slate-500 group-hover:text-rose-400 truncate">Logout</p>
               </div>
             </div>
           </div>
@@ -337,15 +398,122 @@ export default function App() {
                     <h1 className="text-3xl font-bold text-slate-900">Classroom Insights</h1>
                     <p className="text-slate-500 mt-1">Real-time analysis of student engagement and focus.</p>
                   </div>
-                  <button 
-                    onClick={() => setActiveTab('camera')}
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center space-x-2"
-                  >
-                    <CameraIcon size={18} />
-                    <span>New Analysis</span>
-                  </button>
+                  <div className="flex items-center space-x-3">
+                    <button 
+                      onClick={handleGenerateSummary}
+                      disabled={isGeneratingSummary || !lastCapturedImage}
+                      className={cn(
+                        "px-6 py-2.5 rounded-xl font-semibold transition-all flex items-center space-x-2",
+                        isGeneratingSummary || !lastCapturedImage 
+                          ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+                          : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm"
+                      )}
+                    >
+                      {isGeneratingSummary ? (
+                        <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <FileText size={18} />
+                      )}
+                      <span>Generate Summary</span>
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('camera')}
+                      className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center space-x-2"
+                    >
+                      <CameraIcon size={18} />
+                      <span>New Analysis</span>
+                    </button>
+                  </div>
                 </div>
                 <Dashboard analysis={analysis} history={history} />
+              </motion.div>
+            )}
+
+            {activeTab === 'history' && (
+              <motion.div
+                key="history"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-3xl font-bold text-slate-900">Attendance History</h1>
+                    <p className="text-slate-500 mt-1">Chronological record of student check-ins.</p>
+                  </div>
+                  <div className="flex items-center space-x-2 bg-white p-1 rounded-xl border border-slate-100 shadow-sm">
+                    <button className="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold">All Records</button>
+                    <button className="px-4 py-1.5 text-slate-400 hover:text-slate-600 rounded-lg text-xs font-bold transition-colors">Today</button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/50 border-b border-slate-100">
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Student</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Roll Number</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Timestamp</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {attendanceHistory.length > 0 ? attendanceHistory.map((record) => (
+                          <tr key={record.id} className="hover:bg-slate-50/50 transition-colors group">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                                  <User size={14} />
+                                </div>
+                                <span className="text-sm font-bold text-slate-800">{record.studentName}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-sm text-slate-500 font-mono">{record.rollNumber}</span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={cn(
+                                "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                record.status === 'present' ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                              )}>
+                                {record.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <div className="flex items-center space-x-1 text-sm text-slate-700 font-medium">
+                                  <Clock size={12} className="text-slate-400" />
+                                  <span>{new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div className="flex items-center space-x-1 text-[10px] text-slate-400">
+                                  <Calendar size={10} />
+                                  <span>{new Date(record.timestamp).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button className="text-indigo-500 hover:text-indigo-700 text-xs font-bold opacity-0 group-hover:opacity-100 transition-all">
+                                View Details
+                              </button>
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                              <div className="flex flex-col items-center space-y-2">
+                                <History size={32} className="opacity-20" />
+                                <p className="text-sm italic">No attendance records found</p>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </motion.div>
             )}
 
@@ -445,11 +613,11 @@ export default function App() {
                         <User size={48} />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-bold text-slate-900">{currentUser.name}</h3>
-                        <p className="text-slate-500">Roll Number: {currentUser.rollNumber}</p>
+                        <h3 className="text-2xl font-bold text-slate-900">{currentUser?.name}</h3>
+                        <p className="text-slate-500">Roll Number: {currentUser?.rollNumber || 'N/A'}</p>
                         <div className="mt-2 flex space-x-2">
-                          <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold uppercase tracking-wider">Grade {currentUser.grade}</span>
-                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold uppercase tracking-wider">{currentUser.age} Years Old</span>
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold uppercase tracking-wider">Grade {currentUser?.grade || 'N/A'}</span>
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold uppercase tracking-wider">{currentUser?.age || 'N/A'} Years Old</span>
                         </div>
                       </div>
                     </div>
@@ -457,23 +625,23 @@ export default function App() {
                     <div className="grid grid-cols-2 gap-6 mb-8">
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contact Information</p>
-                        <p className="text-sm font-medium text-slate-700">{currentUser.email}</p>
-                        <p className="text-sm font-medium text-slate-700">{currentUser.phone}</p>
+                        <p className="text-sm font-medium text-slate-700">{currentUser?.email || 'N/A'}</p>
+                        <p className="text-sm font-medium text-slate-700">{currentUser?.phone || 'N/A'}</p>
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parent/Guardian</p>
-                        <p className="text-sm font-medium text-slate-700">{currentUser.parentContact}</p>
+                        <p className="text-sm font-medium text-slate-700">{currentUser?.parentContact || 'N/A'}</p>
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Aadhar Number</p>
-                        <p className="text-sm font-medium text-slate-700">•••• •••• {currentUser.aadharNumber.slice(-4)}</p>
+                        <p className="text-sm font-medium text-slate-700">•••• •••• {currentUser?.aadharNumber?.slice(-4) || 'XXXX'}</p>
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Attendance</p>
                         <p className={cn(
                           "text-sm font-bold",
-                          currentUser.attendanceStatus === 'present' ? "text-emerald-600" : "text-rose-600"
-                        )}>{currentUser.attendanceStatus.toUpperCase()}</p>
+                          currentUser?.attendanceStatus === 'present' ? "text-emerald-600" : "text-rose-600"
+                        )}>{(currentUser?.attendanceStatus || 'N/A').toUpperCase()}</p>
                       </div>
                     </div>
 
@@ -563,6 +731,13 @@ export default function App() {
 
         {showStudentForm && (
           <StudentForm onSave={saveStudent} onClose={() => setShowStudentForm(false)} />
+        )}
+
+        {sessionSummary && (
+          <SessionSummaryModal 
+            summary={sessionSummary} 
+            onClose={() => setSessionSummary(null)} 
+          />
         )}
       </main>
     </div>

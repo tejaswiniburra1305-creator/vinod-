@@ -1,0 +1,21 @@
+{
+  "students": [
+    {
+      "id": "1",
+      "name": "Prof. Anderson",
+      "rollNumber": "PROF001",
+      "age": 45,
+      "grade": "Faculty",
+      "email": "anderson@edufocus.edu",
+      "phone": "+1 234 567 8900",
+      "aadharNumber": "1234 5678 9012",
+      "parentContact": "N/A",
+      "attendanceStatus": "present",
+      "lastAttentionScore": 100,
+      "feedback": ["Welcome, Professor!"],
+      "role": "teacher"
+    }
+  ],
+  "sessions": [],
+  "attendance": []
+}

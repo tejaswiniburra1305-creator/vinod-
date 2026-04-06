@@ -7,7 +7,28 @@ const DATA_FILE = path.join(process.cwd(), "data.json");
 
 // Initialize data file if it doesn't exist
 if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ students: [], sessions: [] }, null, 2));
+  const defaultData = { 
+    students: [
+      {
+        id: "1",
+        name: "Prof. Anderson",
+        rollNumber: "PROF001",
+        age: 45,
+        grade: "Faculty",
+        email: "anderson@edufocus.edu",
+        phone: "+1 234 567 8900",
+        aadharNumber: "1234 5678 9012",
+        parentContact: "N/A",
+        attendanceStatus: "present",
+        lastAttentionScore: 100,
+        feedback: ["Welcome, Professor!"],
+        role: "teacher"
+      }
+    ], 
+    sessions: [], 
+    attendance: [] 
+  };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(defaultData, null, 2));
 }
 
 async function startServer() {
@@ -52,6 +73,24 @@ async function startServer() {
     data.sessions.push(req.body);
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
     res.json({ status: "ok" });
+  });
+
+  app.get("/api/attendance", (req, res) => {
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+    res.json(data.attendance || []);
+  });
+
+  app.post("/api/attendance", (req, res) => {
+    const data = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+    if (!data.attendance) data.attendance = [];
+    const record = { 
+      ...req.body, 
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString()
+    };
+    data.attendance.push(record);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    res.json(record);
   });
 
   // Vite middleware for development

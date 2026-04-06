@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { User, Mail, Phone, Fingerprint, ShieldCheck, Camera as CameraIcon, Loader2 } from 'lucide-react';
+import { User, Mail, Phone, Fingerprint, ShieldCheck, Camera as CameraIcon, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { CameraCapture } from './CameraCapture';
+import { verifyFace } from '../services/gemini';
 
 interface LoginProps {
   onLogin: (studentId: string) => void;
@@ -31,11 +32,20 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
 
   const handleFaceCapture = async (base64: string) => {
     setIsVerifying(true);
-    // Simulate face verification with Gemini
-    setTimeout(() => {
+    setError(null);
+    try {
+      const isVerified = await verifyFace(base64, selectedStudent.name);
+      if (isVerified) {
+        setStep('aadhar');
+      } else {
+        setError("Face verification failed. Please ensure your face is clearly visible and try again.");
+      }
+    } catch (err) {
+      console.error("Face verification error:", err);
+      setError("An error occurred during face verification. Please try again.");
+    } finally {
       setIsVerifying(false);
-      setStep('aadhar');
-    }, 2000);
+    }
   };
 
   const handleAadhar = (e: React.FormEvent) => {
@@ -94,10 +104,22 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students }) => {
               <h3 className="font-bold text-slate-800">Face Recognition</h3>
               <p className="text-xs text-slate-500">Look directly at the camera</p>
             </div>
-            <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-900">
+            <div className="relative aspect-square rounded-2xl overflow-hidden bg-slate-900 border-2 border-indigo-100 shadow-inner">
               <CameraCapture onCapture={handleFaceCapture} isAnalyzing={isVerifying} />
+              {isVerifying && (
+                <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] flex flex-col items-center justify-center text-white z-10">
+                  <Loader2 className="animate-spin mb-2" size={32} />
+                  <p className="text-xs font-bold uppercase tracking-widest">Verifying Identity...</p>
+                </div>
+              )}
             </div>
-            <p className="text-[10px] text-center text-slate-400">Simulated biometric verification in progress...</p>
+            {error && (
+              <div className="flex items-start space-x-2 p-3 bg-rose-50 rounded-xl border border-rose-100">
+                <AlertCircle className="text-rose-500 shrink-0 mt-0.5" size={14} />
+                <p className="text-[10px] text-rose-600 leading-tight">{error}</p>
+              </div>
+            )}
+            <p className="text-[10px] text-center text-slate-400">Biometric verification powered by EduFocus AI</p>
           </div>
         )}
 
