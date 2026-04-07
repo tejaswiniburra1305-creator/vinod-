@@ -1,5 +1,7 @@
 {
-  "name": "EduFocus: Smart Classroom Attention Management",
+  "name": "Smart Classroom Attention Management",
   "description": "An AI-powered system to monitor and manage student engagement and attention levels in real-time using Gemini vision analysis.",
-  "requestFramePermissions": ["camera"]
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

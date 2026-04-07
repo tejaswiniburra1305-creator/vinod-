@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, User, Hash, Calendar, GraduationCap, Phone, Shield, Save, X } from 'lucide-react';
+import { Plus, User, Hash, Calendar, GraduationCap, Phone, Shield, Save, X, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Student } from '@/src/services/gemini';
 
@@ -19,11 +19,42 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initi
     phone: initialData?.phone || '',
     aadharNumber: initialData?.aadharNumber || '',
     parentContact: initialData?.parentContact || '',
+    role: initialData?.role || 'student',
   });
+
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showAadhar, setShowAadhar] = useState(false);
+
+  const validate = () => {
+    const newErrors: Record<string, string> = {};
+    
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      newErrors.email = 'Invalid email format';
+    }
+
+    // Phone validation (10 digits)
+    const phoneRegex = /^\d{10}$/;
+    if (!phoneRegex.test(formData.phone)) {
+      newErrors.phone = 'Phone must be 10 digits';
+    }
+
+    // Aadhar validation (12 digits)
+    const aadharRegex = /^\d{12}$/;
+    if (!aadharRegex.test(formData.aadharNumber)) {
+      newErrors.aadharNumber = 'Aadhar must be 12 digits';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formData);
+    if (validate()) {
+      onSave(formData);
+    }
   };
 
   return (
@@ -40,7 +71,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initi
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <form onSubmit={handleSubmit} className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[80vh] overflow-y-auto">
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400 uppercase">Full Name</label>
             <div className="relative">
@@ -104,8 +135,13 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initi
               required
               value={formData.email}
               onChange={e => setFormData({...formData, email: e.target.value})}
-              className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              className={`w-full px-4 py-2 bg-slate-50 border ${errors.email ? 'border-rose-500' : 'border-slate-200'} rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none`}
             />
+            {errors.email && (
+              <p className="text-[10px] text-rose-500 flex items-center gap-1">
+                <AlertCircle size={10} /> {errors.email}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -117,9 +153,14 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initi
                 required
                 value={formData.phone}
                 onChange={e => setFormData({...formData, phone: e.target.value})}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                className={`w-full pl-10 pr-4 py-2 bg-slate-50 border ${errors.phone ? 'border-rose-500' : 'border-slate-200'} rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none`}
               />
             </div>
+            {errors.phone && (
+              <p className="text-[10px] text-rose-500 flex items-center gap-1">
+                <AlertCircle size={10} /> {errors.phone}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -127,13 +168,25 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initi
             <div className="relative">
               <Shield className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
               <input
-                type="text"
+                type={showAadhar ? "text" : "password"}
                 required
                 value={formData.aadharNumber}
                 onChange={e => setFormData({...formData, aadharNumber: e.target.value})}
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                className={`w-full pl-10 pr-10 py-2 bg-slate-50 border ${errors.aadharNumber ? 'border-rose-500' : 'border-slate-200'} rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none`}
               />
+              <button
+                type="button"
+                onClick={() => setShowAadhar(!showAadhar)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showAadhar ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
+            {errors.aadharNumber && (
+              <p className="text-[10px] text-rose-500 flex items-center gap-1">
+                <AlertCircle size={10} /> {errors.aadharNumber}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -150,10 +203,10 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initi
           <div className="md:col-span-2 pt-4">
             <button
               type="submit"
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center space-x-2"
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center space-x-2 shadow-lg shadow-indigo-100"
             >
               <Save size={20} />
-              <span>Save Student Profile</span>
+              <span>{initialData ? 'Update Student Profile' : 'Save Student Profile'}</span>
             </button>
           </div>
         </form>

@@ -14,6 +14,36 @@
       "lastAttentionScore": 100,
       "feedback": ["Welcome, Professor!"],
       "role": "teacher"
+    },
+    {
+      "id": "2",
+      "name": "Alice Johnson",
+      "rollNumber": "STU001",
+      "age": 16,
+      "grade": "10th",
+      "email": "alice@student.edu",
+      "phone": "9876543210",
+      "aadharNumber": "111122223333",
+      "parentContact": "Bob Johnson",
+      "attendanceStatus": "absent",
+      "lastAttentionScore": 85,
+      "feedback": ["Great focus today!", "Keep up the good work."],
+      "role": "student"
+    },
+    {
+      "id": "3",
+      "name": "Charlie Brown",
+      "rollNumber": "STU002",
+      "age": 15,
+      "grade": "10th",
+      "email": "charlie@student.edu",
+      "phone": "9123456789",
+      "aadharNumber": "444455556666",
+      "parentContact": "Sally Brown",
+      "attendanceStatus": "absent",
+      "lastAttentionScore": 62,
+      "feedback": ["Try to stay more focused.", "Avoid distractions."],
+      "role": "student"
     }
   ],
   "sessions": [],

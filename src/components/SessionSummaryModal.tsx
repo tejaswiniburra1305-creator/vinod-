@@ -15,9 +15,10 @@ import { cn } from '@/src/lib/utils';
 interface SessionSummaryModalProps {
   summary: SessionSummary;
   onClose: () => void;
+  lastCapturedImage?: string | null;
 }
 
-export const SessionSummaryModal: React.FC<SessionSummaryModalProps> = ({ summary, onClose }) => {
+export const SessionSummaryModal: React.FC<SessionSummaryModalProps> = ({ summary, onClose, lastCapturedImage }) => {
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
       <motion.div 
@@ -69,6 +70,23 @@ export const SessionSummaryModal: React.FC<SessionSummaryModalProps> = ({ summar
               "{summary.engagementOverview}"
             </p>
           </div>
+
+          {lastCapturedImage && (
+            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+              <div className="flex items-center space-x-2 mb-3 text-slate-800">
+                <FileText size={18} className="text-indigo-500" />
+                <h4 className="font-bold">Captured Session Frame</h4>
+              </div>
+              <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 shadow-inner">
+                <img 
+                  src={lastCapturedImage} 
+                  alt="Captured Session" 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Key Discussion Points */}

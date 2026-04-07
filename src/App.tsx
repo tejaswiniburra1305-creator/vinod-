@@ -22,8 +22,10 @@ import {
 } from 'lucide-react';
 import { CameraCapture } from './components/CameraCapture';
 import { Dashboard } from './components/Dashboard';
+import { StudentDashboard } from './components/StudentDashboard';
 import { Auth } from './components/Auth';
 import { StudentForm } from './components/StudentForm';
+import { Login as StudentLogin } from './components/Login';
 import { analyzeClassroom, generateSessionSummary, AttentionAnalysis, Student, SessionSummary } from './services/gemini';
 import { cn } from './lib/utils';
 import { SessionSummaryModal } from './components/SessionSummaryModal';
@@ -53,6 +55,7 @@ export default function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
+  const [showStudentLogin, setShowStudentLogin] = useState(false);
 
   useEffect(() => {
     fetchStudents();
@@ -60,6 +63,14 @@ export default function App() {
     // Initial notification
     addNotification('info', 'System Ready', 'EduFocus is monitoring classroom 402.');
   }, []);
+
+  useEffect(() => {
+    if (isLoggedIn && currentUser?.role === 'student') {
+      if (['camera', 'students', 'history'].includes(activeTab)) {
+        setActiveTab('dashboard');
+      }
+    }
+  }, [isLoggedIn, currentUser, activeTab]);
 
   const addNotification = (type: 'info' | 'warning' | 'success', title: string, message: string) => {
     const newNotif: AppNotification = {
@@ -281,24 +292,28 @@ export default function App() {
             icon={<LayoutDashboard size={20} />}
             label="Dashboard"
           />
-          <NavItem 
-            active={activeTab === 'camera'} 
-            onClick={() => setActiveTab('camera')}
-            icon={<CameraIcon size={20} />}
-            label="Live Monitor"
-          />
-          <NavItem 
-            active={activeTab === 'students'} 
-            onClick={() => setActiveTab('students')}
-            icon={<UsersIcon size={20} />}
-            label="Students"
-          />
-          <NavItem 
-            active={activeTab === 'history'} 
-            onClick={() => setActiveTab('history')}
-            icon={<History size={20} />}
-            label="History"
-          />
+          {currentUser?.role === 'teacher' && (
+            <>
+              <NavItem 
+                active={activeTab === 'camera'} 
+                onClick={() => setActiveTab('camera')}
+                icon={<CameraIcon size={20} />}
+                label="Live Monitor"
+              />
+              <NavItem 
+                active={activeTab === 'students'} 
+                onClick={() => setActiveTab('students')}
+                icon={<UsersIcon size={20} />}
+                label="Students"
+              />
+              <NavItem 
+                active={activeTab === 'history'} 
+                onClick={() => setActiveTab('history')}
+                icon={<History size={20} />}
+                label="History"
+              />
+            </>
+          )}
         </nav>
 
         <div className="absolute bottom-8 left-0 w-full px-4 space-y-2">
@@ -339,10 +354,10 @@ export default function App() {
           </div>
           
           <div className="flex items-center space-x-4">
-            {!isLoggedIn && (
+            {isLoggedIn && currentUser?.role === 'teacher' && (
               <button 
-                onClick={() => setActiveTab('camera')}
-                className="flex items-center space-x-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-sm font-bold transition-all"
+                onClick={() => setShowStudentLogin(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl text-sm font-bold transition-all"
               >
                 <LogIn size={16} />
                 <span>Student Login</span>
@@ -429,39 +444,45 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
-                <div className="flex items-center justify-between mb-8">
-                  <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Classroom Insights</h1>
-                    <p className="text-slate-500 mt-1">Real-time analysis of student engagement and focus.</p>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <button 
-                      onClick={handleGenerateSummary}
-                      disabled={isGeneratingSummary || !lastCapturedImage}
-                      className={cn(
-                        "px-6 py-2.5 rounded-xl font-semibold transition-all flex items-center space-x-2",
-                        isGeneratingSummary || !lastCapturedImage 
-                          ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
-                          : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm"
-                      )}
-                    >
-                      {isGeneratingSummary ? (
-                        <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <FileText size={18} />
-                      )}
-                      <span>Generate Summary</span>
-                    </button>
-                    <button 
-                      onClick={() => setActiveTab('camera')}
-                      className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center space-x-2"
-                    >
-                      <CameraIcon size={18} />
-                      <span>New Analysis</span>
-                    </button>
-                  </div>
-                </div>
-                <Dashboard analysis={analysis} history={history} />
+                {currentUser?.role === 'teacher' ? (
+                  <>
+                    <div className="flex items-center justify-between mb-8">
+                      <div>
+                        <h1 className="text-3xl font-bold text-slate-900">Classroom Insights</h1>
+                        <p className="text-slate-500 mt-1">Real-time analysis of student engagement and focus.</p>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <button 
+                          onClick={handleGenerateSummary}
+                          disabled={isGeneratingSummary || !lastCapturedImage}
+                          className={cn(
+                            "px-6 py-2.5 rounded-xl font-semibold transition-all flex items-center space-x-2",
+                            isGeneratingSummary || !lastCapturedImage 
+                              ? "bg-slate-100 text-slate-400 cursor-not-allowed" 
+                              : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-sm"
+                          )}
+                        >
+                          {isGeneratingSummary ? (
+                            <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <FileText size={18} />
+                          )}
+                          <span>Generate Summary</span>
+                        </button>
+                        <button 
+                          onClick={() => setActiveTab('camera')}
+                          className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center space-x-2"
+                        >
+                          <CameraIcon size={18} />
+                          <span>New Analysis</span>
+                        </button>
+                      </div>
+                    </div>
+                    <Dashboard analysis={analysis} history={history} />
+                  </>
+                ) : (
+                  <StudentDashboard student={currentUser} attendanceHistory={attendanceHistory} />
+                )}
               </motion.div>
             )}
 
@@ -815,7 +836,37 @@ export default function App() {
           <SessionSummaryModal 
             summary={sessionSummary} 
             onClose={() => setSessionSummary(null)} 
+            lastCapturedImage={lastCapturedImage}
           />
+        )}
+
+        {showStudentLogin && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+              <button 
+                onClick={() => setShowStudentLogin(false)}
+                className="absolute top-6 right-6 p-2 hover:bg-slate-100 rounded-full transition-colors z-10"
+              >
+                <X size={20} />
+              </button>
+              <div className="p-8">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-slate-900">Student Attendance</h2>
+                  <p className="text-slate-500 text-sm mt-1">Mark your attendance for this session</p>
+                </div>
+                <StudentLogin 
+                  onLogin={(id) => {
+                    const student = students.find(s => s.id === id);
+                    if (student) {
+                      handleLogin(student);
+                      setShowStudentLogin(false);
+                    }
+                  }} 
+                  students={students} 
+                />
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>
