@@ -49,6 +49,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [showStudentForm, setShowStudentForm] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [lastCapturedImage, setLastCapturedImage] = useState<string | null>(null);
@@ -112,9 +113,24 @@ export default function App() {
           if (detail) {
             const updated = {
               ...s,
+              attendanceStatus: 'present' as const,
               lastAttentionScore: detail.attentionScore,
               feedback: [...(s.feedback || []), detail.feedback].slice(-5)
             };
+            
+            // Record attendance in history
+            fetch('/api/attendance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                studentId: s.id,
+                studentName: s.name,
+                rollNumber: s.rollNumber,
+                status: 'present',
+                timestamp: new Date().toISOString()
+              })
+            }).then(() => fetchAttendanceHistory());
+
             // Persist to server
             fetch(`/api/students/${s.id}`, {
               method: 'PUT',
@@ -211,6 +227,26 @@ export default function App() {
       addNotification('success', 'Student Added', `${newStudent.name} has been registered.`);
     } catch (err) {
       console.error("Failed to save student", err);
+    }
+  };
+
+  const updateStudent = async (studentData: any) => {
+    if (!editingStudent) return;
+    try {
+      const res = await fetch(`/api/students/${editingStudent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(studentData)
+      });
+      const updated = await res.json();
+      setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
+      if (currentUser?.id === updated.id) {
+        setCurrentUser(updated);
+      }
+      setEditingStudent(null);
+      addNotification('success', 'Profile Updated', `${updated.name}'s profile has been updated.`);
+    } catch (err) {
+      console.error("Failed to update student", err);
     }
   };
 
@@ -672,7 +708,10 @@ export default function App() {
                       >
                         Download Profile
                       </button>
-                      <button className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all">
+                      <button 
+                        onClick={() => setEditingStudent(currentUser)}
+                        className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all"
+                      >
                         Edit Profile
                       </button>
                     </div>
@@ -725,12 +764,51 @@ export default function App() {
               </motion.div>
             )}
 
+            {activeTab === 'camera' && (
+              <motion.div
+                key="camera"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="max-w-4xl mx-auto"
+              >
+                <div className="mb-8">
+                  <h1 className="text-3xl font-bold text-slate-900">Classroom Monitoring</h1>
+                  <p className="text-slate-500 mt-1">Capture a frame to analyze student engagement and attendance.</p>
+                </div>
+                <CameraCapture onCapture={handleCapture} isAnalyzing={isAnalyzing} />
+                
+                <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <FeatureCard 
+                    title="Real-time Analysis" 
+                    desc="Gemini AI analyzes every student's posture and focus levels."
+                  />
+                  <FeatureCard 
+                    title="Auto Attendance" 
+                    desc="Students are automatically marked present via face recognition."
+                  />
+                  <FeatureCard 
+                    title="Privacy First" 
+                    desc="Images are processed and discarded after analysis."
+                  />
+                </div>
+              </motion.div>
+            )}
+
             {/* ... other tabs ... */}
           </AnimatePresence>
         </div>
 
         {showStudentForm && (
           <StudentForm onSave={saveStudent} onClose={() => setShowStudentForm(false)} />
+        )}
+
+        {editingStudent && (
+          <StudentForm 
+            initialData={editingStudent} 
+            onSave={updateStudent} 
+            onClose={() => setEditingStudent(null)} 
+          />
         )}
 
         {sessionSummary && (

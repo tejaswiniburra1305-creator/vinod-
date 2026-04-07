@@ -4,20 +4,21 @@ import { motion } from 'motion/react';
 import { Student } from '@/src/services/gemini';
 
 interface StudentFormProps {
-  onSave: (student: Omit<Student, 'id' | 'attendanceStatus' | 'lastAttentionScore' | 'feedback'>) => void;
+  onSave: (student: any) => void;
   onClose: () => void;
+  initialData?: any;
 }
 
-export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose }) => {
+export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose, initialData }) => {
   const [formData, setFormData] = useState({
-    name: '',
-    rollNumber: '',
-    age: 0,
-    grade: '',
-    email: '',
-    phone: '',
-    aadharNumber: '',
-    parentContact: '',
+    name: initialData?.name || '',
+    rollNumber: initialData?.rollNumber || '',
+    age: initialData?.age || 0,
+    grade: initialData?.grade || '',
+    email: initialData?.email || '',
+    phone: initialData?.phone || '',
+    aadharNumber: initialData?.aadharNumber || '',
+    parentContact: initialData?.parentContact || '',
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -33,7 +34,7 @@ export const StudentForm: React.FC<StudentFormProps> = ({ onSave, onClose }) => 
         className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden"
       >
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <h2 className="text-xl font-bold text-slate-800">Add New Student</h2>
+          <h2 className="text-xl font-bold text-slate-800">{initialData ? 'Edit Student Profile' : 'Add New Student'}</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
             <X size={20} />
           </button>
